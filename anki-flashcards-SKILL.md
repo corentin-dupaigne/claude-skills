@@ -1,232 +1,233 @@
 ---
 name: anki-flashcards
-description: >-
-  Generate normalized, atomic Anki flashcards as CSV from course material,
-  lecture slides, diagrams, or the content of a conversation. Use this skill
-  whenever the user wants to turn notes, a slide, a screenshot, a diagram, or a
-  chat discussion into Anki cards, build or extend a deck, or says things like
-  "flashcard this", "make cards from this", "add this to Anki", even if they
-  don't explicitly say "Anki" or "flashcard". Enforces evidence-based,
-  low-friction card design and always outputs an importable CSV; it additionally
-  produces an image-occlusion worklist when the material is best learned as a
-  diagram.
+description: Turn what the user just learned, usually in a conversation with Claude and sometimes from slides or notes, into atomic Anki cards as an importable CSV. Use for flashcard this, make cards from this, add this to Anki, even without the words Anki or flashcard.
 ---
 
-# Anki Flashcards
+# Anki Flashcards (v2)
 
-Turn source material into a small deck of **atomic, normalized** Anki cards that
-are smooth to review with low mental energy (e.g. on a phone during a commute).
-The whole point is to remove friction: consistent format, no cards to rework, no
-ambiguity to resolve at review time. Cards are built for active recall and assume
-review in a spaced-repetition scheduler — Anki handles the scheduling, so the
-job here is purely to write clean cards.
+Make a small deck of **atomic, normalized** Anki cards that review smoothly with
+low energy (e.g. on a phone in the metro). Anki handles the scheduling. The job
+here is to write cards that need no fixing and test what the user **actually
+learned**.
+
+## Primary mode: cards from a learning conversation
+
+Usually the user calls this skill at the end of a conversation where Claude
+taught them a new topic. The source is **the user's learning in that
+conversation**, not the topic in general and not everything Claude said.
+
+### Step 1: build a learning inventory (before writing any card)
+
+Go through the conversation and list the **learning events**, grouped by
+priority:
+
+1. **Struggles** (highest priority). Places where the user got something wrong,
+   misunderstood something that had to be corrected, asked about the same point
+   more than once, said "wait, why…" or "I don't get…", or got an exercise or
+   Socratic question wrong before getting it right.
+2. **New knowledge**. Concepts, mechanisms, terms or commands the user asked
+   about or clearly met for the first time, and that the conversation actually
+   explained (not just named).
+3. **Insights**. Moments where something clicked: a "so that's why…", a
+   connection the user made, or an analogy that made the idea work for them.
+
+Leave out:
+- things Claude mentioned in passing that the user never engaged with
+- tangents and side remarks
+- things the user already knew (they explained them correctly without help)
+- logistics, tooling chatter, and meta-discussion
+
+A short conversation can give 5 cards. A long session usually gives 10–25. Never
+pad. If the inventory is thin, the deck is small.
+
+### Step 2: turn each event into card(s)
+
+- **Use the conversation's own framing.** Use the same terms, the same examples,
+  and the same analogy if that analogy is what made it click. A card should feel
+  like *their* conversation, not a textbook. Don't add facts, numbers or detail
+  that the conversation didn't contain.
+- **Struggles get targeted cards.** Write the card so it tests the exact point
+  of confusion, i.e. the distinction the user got wrong. For example, if the
+  user mixed up a namespace and a cgroup, ask "Which mechanism limits a
+  process's CPU, a namespace or a cgroup?" rather than a generic definition
+  card. A struggle can get **up to 2 cards from different angles** (e.g. the
+  "what" and the "why"). Never phrase the wrong idea as if it were true.
+- **New knowledge** gets one card per atomic fact.
+- **Insights** usually become a "Why…?" card whose answer is the short reason
+  the user came to understand.
+
+### Step 3: deliver with the inventory visible
+
+When delivering, list in 3–6 short lines **which struggles were carded**, so the
+user can spot anything missing at a glance. Don't list every card.
+
+## Secondary mode: slides, notes, images
+
+When the source is course material rather than a conversation, skip the
+inventory and pull only the concepts that are taught. Everything below still
+applies. Stay strictly inside the source: no outside facts, no "enrichment".
+Test the concept, not the picture (never "which way does the arrow point").
 
 ## One deck, tags do the sorting
 
-Every card from a run goes into **a single deck** — never split across decks by
-topic. All topic organization is carried by **hierarchical tags**, which are more
-flexible than decks and keep the review experience to one queue with nothing to
-navigate. Use the deck the user names; if they don't name one, default to a
-single deck called `Flashcards`. This applies to occlusion cards too.
+All cards go into **one deck**: the one the user names, otherwise `Flashcards`.
+Topics are carried only by hierarchical tags (`k8s::cni`, `net::5g::nr`). Never
+split into subdecks. Reuse a stable tag scheme across runs (`linux::namespaces`,
+`net::routing`, `k8s::networking`). A card may carry several space-separated
+tags when it really spans topics.
 
-## Outputs
+## Card types: pick per fact, by the shape of the fact
 
-1. **A CSV file** — always. Contains every Basic and Cloze card. This is the
-   primary deliverable.
-2. **An image-occlusion worklist** — *only* when the material is best learned as
-   a diagram: either the source contains a figure whose layout is the point, or
-   it describes something whose meaning is carried by spatial arrangement or
-   connection structure rather than by wording. Image-occlusion cards cannot be
-   represented in CSV (they store mask geometry), so they are listed as a short
-   worklist the user builds in Anki's native Image Occlusion editor. If the
-   material isn't diagrammatic, do not produce this output at all — do not
-   mention it.
+There is no default type. Pick the type that matches the fact's shape:
 
-## Allowed card types (and nothing else)
+| Fact shape | Type |
+|---|---|
+| Concept, function, rationale ("what does / why does…") | **Basic** |
+| A two-way pair that is useful in both directions: acronym ↔ expansion, term ↔ one-line meaning, command ↔ effect | **Basic (optional reversed card)** with Add Reverse = `y` |
+| A fact that reads naturally as one sentence with one key term; a set of peer items; an ordered sequence or process | **Cloze** |
+| Meaning carried by layout or connections (a diagram) | **Image Occlusion** (worklist, not CSV) |
 
-Only three types. Type-in-answer is deliberately excluded: exact-match grading
-punishes typos and is miserable on a phone, which fights the low-friction goal.
-Exact-syntax facts become Basic cards whose answer is the exact command/flag.
+For reversed notes, write **bare items on both sides, not questions**: Front
+`IPAM (networking)`, Back `IP Address Management`. The reverse card shows the
+Back as the prompt, so a question-shaped Front would give the answer away. Put
+the context in parentheses on the Front.
 
-- **Basic** — the default. A question with one unambiguous answer.
-- **Cloze** — only under the strict trigger below. Chosen for fast authoring
-  from source text, never because it "retains better" (it doesn't, vs Basic).
-- **Image Occlusion** — for diagrammatic material only; emitted to the worklist,
-  not the CSV.
+Type-in-answer is excluded: exact-match grading punishes typos on a phone.
+Exact-syntax facts become Basic cards whose answer is the exact command or flag.
 
-## Card-type decision procedure
+### Cloze rules
 
-Apply in order, per fact:
+- **You may write the sentence yourself.** The source doesn't need to contain a
+  clean sentence already. Rephrase the fact into one, using the conversation's
+  wording.
+- **The sentence must not give the deletion away.** No synonym, no grammatical
+  tell, exactly one correct answer per deletion.
+- **Several deletions in one note are fine:** `c1`, `c2`, … each produce a
+  *separate* card, so every card is still one retrieval. Use this for:
+  - **Sets of peers**: one note, one cN per item that carries its own fact.
+  - **Ordered sequences / steps**: one note listing the steps in order, with
+    each step as its own cN (overlapping cloze). The visible neighbours give the
+    position. This replaces "list the steps" cards.
+- Keep a note to 5 deletions at most. Split longer sequences into stages.
 
-1. **Is it best tested on a diagram?** — its meaning is carried by spatial
-   arrangement or connection structure rather than by wording → **image-occlusion
-   worklist entry** (see below).
-2. **Does it meet ALL of the Cloze conditions?** → **Cloze row.**
-   - The source already states the fact as one clean declarative sentence, AND
-   - the card is made by deleting exactly **one** load-bearing term (or one
-     tightly-bound phrase), AND
-   - the remaining sentence does **not** give the deleted term away (no synonym,
-     no grammatical tell) and has exactly **one** correct answer.
-   - If you are tempted to add a second, independent deletion (`c2`) for a
-     *different* fact, that breaks atomicity → split into two cards instead.
-3. **Otherwise → Basic row.** When in doubt, Basic. Basic gives less away than
-   Cloze, which is why it is the default.
-4. **If the fact cannot be made atomic and unambiguous by any of the above →
-   drop it.** Emitting a shaky card the user must later fix is worse than
-   omitting it. Short, clean decks beat exhaustive ones.
+### Image Occlusion
 
-## Non-negotiable card rules
+Use it only when the source includes a usable figure whose layout is the point.
+Write a short worklist instead of CSV rows (format below). If the material is
+spatial but there's no image, add one line suggesting a diagram, nothing more.
+If nothing is diagrammatic, don't mention occlusion at all.
 
-Every card must satisfy all of these, or it is dropped. Each rule has a short
-reason so you can apply judgment on cases the rules don't spell out.
+## Card rules (each card must pass all of them, or it is dropped)
 
-- **Force retrieval.** Every card is a genuine recall prompt — a question, or a
-  deletion the reviewer fills from memory — never a statement to re-read, because
-  retrieving from memory is what builds durable recall. No recognition: no
-  multiple-choice, no "true or false", no "which of these…". The reviewer must
-  *produce* the answer.
-- **Don't give the answer away.** The prompt — and for Cloze, the words left in
-  the sentence — must not telegraph the answer; delete or ask for the
-  load-bearing term, not an incidental one. This is the single most important
-  quality rule: it stops cards from decaying into sentence pattern-matching
-  instead of real recall.
-- **One retrieval per card — atomicity.** Exactly one fact, one answer.
-  - **Never** write a card whose prompt asks to enumerate ("list the N…",
-    "name all…", "what are the components of…"). Full-set recall is error-prone
-    and high-friction — banned.
-  - When the source presents a set of N peer items, generate **one card per
-    item** that carries a distinct, testworthy fact (identity or role) — not one
-    card for the whole set. Do **not** manufacture near-duplicate cards for
-    members that carry no independent fact; prefer one clean conceptual card.
-- **Calibrated difficulty.** One real but achievable retrieval step per card —
-  not trivially obvious, not impossibly broad — since the useful effort is what
-  strengthens memory.
-
-## Content & style rules
-
-- **Stay strictly inside the source.** Only make cards for concepts actually
-  present in the provided material. No outside facts, no "enrichment", no cards
-  that go beyond what was taught.
-- **Test the concept, not the artifact.** For a slide or diagram, test what it
-  teaches — never incidental properties of the image itself (e.g. never "which
-  way does the arrow point", "what colour is the box").
-- **Answers are one line.** A single term or short phrase, quiz-style. No
-  explanatory sentences, no paragraphs, no trailing period on bare terms.
-- **Keep decks short.** Core concepts only. Favor a tight deck over coverage.
-- **Consistent phrasing.** Prefer canonical stems so review feels uniform:
-  "What is X?" (definition), "What does X do?" (function), "Why does X …?"
-  (rationale), "What/which … X?" (identification). Deviate only when a stem
-  would distort the fact.
+- **Force retrieval.** The user must produce the answer. No multiple choice, no
+  true/false, no "which of these" (except a two-option contrast that targets a
+  real struggle, as in Step 2).
+- **Don't give the answer away.** The prompt must not contain the answer's key
+  word or a near-synonym of it.
+- **One retrieval per card.** Never a "list / name all…" Basic card. Use cloze
+  sets or sequences instead.
+- **Context in the prompt.** Tags aren't shown during review, so every prompt
+  must be understandable on its own months later. Start with a short context
+  when it's needed: `In 5G NR, …`, `In Kubernetes CNI, …`.
+- **Answers fit on one line, up to about 10 words.** A term or a short phrase is
+  best. A short reason is fine for "why" cards. No paragraphs, no trailing
+  period on bare terms.
+- **Calibrated difficulty.** One real but achievable retrieval step: not
+  trivially obvious, not impossibly broad.
+- **Drop rather than ship a shaky card.** If a fact can't be made atomic and
+  unambiguous, omit it. A card the user has to fix later costs more than a
+  missing one.
+- **Canonical stems** so review feels uniform: "What is X?", "What does X do?",
+  "Why does X …?", "Which X …?". Deviate only when a stem would distort the fact.
 
 ## CSV format
 
-Emit a single UTF-8 `.csv` file. Use these exact header lines first (replace
-`Flashcards` with the user's deck name if they gave one), then one row per card:
+UTF-8 `.csv`. Header lines first:
 
 ```
 #separator:,
 #html:true
-#notetype column:1
+#guid column:1
+#notetype column:2
 #deck:Flashcards
-#tags column:4
+#tags column:6
 ```
 
-`#deck:` sets one deck globally for every row — that is what enforces the
-single-deck rule. Each row then has **4 comma-separated columns, in this order**:
+6 columns per row, always (leave unused fields empty):
 
-| Col | Meaning | Basic | Cloze |
-|-----|---------|-------|-------|
-| 1 | note type | `Basic` | `Cloze` |
-| 2 | field 1 | Front (the question) | Text (sentence with `{{c1::…}}`) |
-| 3 | field 2 | Back (the answer) | Back Extra (usually empty) |
-| 4 | tags (space-separated, hierarchical `::`) | `linux::namespaces` | same |
+| Col | Basic | Basic (optional reversed card) | Cloze |
+|---|---|---|---|
+| 1 guid | id | id | id |
+| 2 notetype | `Basic` | `Basic (optional reversed card)` | `Cloze` |
+| 3 | Front | Front | Text with `{{c1::…}}` |
+| 4 | Back | Back | Back Extra (usually empty) |
+| 5 | *(empty)* | `y` (Add Reverse) | *(empty)* |
+| 6 tags | `k8s::cni` | … | … |
 
-Rules for valid CSV:
-- **Quote any field** containing a comma, double-quote, or newline by wrapping it
-  in double-quotes and doubling internal quotes (`"` becomes `""`). Otherwise
-  leave unquoted.
-- Because `#html:true` is set, a literal `<` or `>` in a field must be escaped as
-  `&lt;` / `&gt;` so Anki doesn't read it as a tag.
-- Keep every field on one physical line (no embedded newlines).
-- Cloze deletions use `{{c1::answer}}`. Optional hint: `{{c1::answer::hint}}`.
+- **guid:** a stable id so re-importing a fixed file updates cards instead of
+  duplicating them. Use the first 10 hex chars of sha1(tag + "|" + field 3 as
+  first written). Keep a card's guid unchanged when you revise its wording in
+  the same session.
+- Quote any field that contains a comma, double-quote or newline, and double
+  any internal quotes. Escape literal `<` `>` as `&lt;` `&gt;`. No embedded
+  newlines.
+- Cloze syntax: `{{c1::answer}}`, optionally with a hint: `{{c1::answer::hint}}`.
 
-**Tags carry all the sorting.** Assign a hierarchical tag matching the topic, so
-cards self-sort by tag in searches, filters, and filtered decks — the user never
-sorts by hand and never navigates multiple decks. Reuse a stable scheme, e.g.
-`linux::namespaces`, `net::routing`, `k8s::cni`, `k8s::networking`. A card may
-carry more than one tag when it genuinely spans topics.
+Import: **File → Import** in Anki. The three note types are built in.
 
-Deliver the file and tell the user to import via **File → Import** in Anki
-(recent versions auto-detect the header directives; the note types `Basic` and
-`Cloze` are built in).
-
-## Image-occlusion worklist (only when the material is diagrammatic)
-
-When step 1 of the decision procedure fires and the source includes a usable
-image, output a short list (markdown or plain text — not CSV) with one entry per
-diagram. Use the same single deck as the CSV; tags carry the topic:
+## Image-occlusion worklist format
 
 ```
-### Occlusion: <short name of the diagram>
+### Occlusion: <diagram name>
 - Source: <which slide/image>
-- Deck: Flashcards (the run's single deck)   Tags: <hierarchical tags>
-- Mask each of these labels separately (one card each, "Hide All, Guess One"):
-  - <label 1>
-  - <label 2>
-  ...
-- Build in Anki: Add -> Image Occlusion -> paste the image -> mask the labels above.
+- Deck: <deck>   Tags: <tags>
+- Mask separately (Hide All, Guess One): <label 1>, <label 2>, …
+- Build: Add → Image Occlusion → paste image → mask the labels above.
 ```
 
-Only list labels that test a taught concept (structure identity / relationship),
-never decorative parts of the figure.
+Only mask labels that test a taught concept.
 
-If the material is diagrammatic but the source includes **no** usable image,
-don't invent labels. Add a single-line flag instead — e.g. "This is spatial:
-consider making or finding a diagram of it and occluding that." Keep it to one
-line; don't expand it into a section.
+## Examples
 
-## Worked examples
+Conversation excerpt: *the user thought a pod's IP was assigned by the kubelet;
+Claude corrected it (the CNI plugin assigns it during ADD); the user then asked
+why containers in a pod can reach each other on localhost; later the user
+learned the CNI call order.* (The guids below are placeholders. Compute real
+ones as described above.)
 
-Header once, then rows. All rows share the one deck (from `#deck:`); the tags do
-the topic sorting.
-
-**Basic (definition — description in the prompt, term as the answer):**
 ```
-Basic,"What isolates a process's view of network interfaces, routing, and firewall rules?",A network namespace,linux::namespaces
-```
-
-**Basic (function):**
-```
-Basic,What does the CNI ADD operation do?,Attaches a pod to the network,k8s::cni
-```
-
-**Cloze (clean source sentence, one load-bearing deletion, no tell):**
-```
-Cloze,The CNI {{c1::ADD}} operation attaches a pod to the network.,,k8s::cni
+#separator:,
+#html:true
+#guid column:1
+#notetype column:2
+#deck:Flashcards
+#tags column:6
+a1f3c9e2b0,Basic,"In Kubernetes, which component assigns a pod's IP: the kubelet or the CNI plugin?",The CNI plugin,,k8s::cni
+7c2e91d4aa,Basic,"In Kubernetes, why can containers in the same pod talk over localhost?",They share one network namespace,,k8s::networking
+4be0d2f71c,Cloze,"In Kubernetes CNI, the plugin assigns the pod IP during the {{c1::ADD}} operation.",,,k8s::cni
+9d03aa61e5,Cloze,"Pod network setup order: kubelet → {{c1::container runtime}} → {{c2::CNI plugin}} → {{c3::IPAM plugin}}",,,k8s::cni
+e6a7b8c901,Basic (optional reversed card),IPAM (networking),IP Address Management,y,net::ipam
 ```
 
-**Dropped (correctly omitted):** a slide bullet "A pod has one IP, shared by all
-its containers, assigned by the CNI plugin at ADD time, reachable cluster-wide"
-packs four facts. Do not make one card. Split into the atomic facts that each
-carry a distinct point (e.g. "How many IPs does a pod have? -> One", "Which
-component assigns a pod's IP? -> The CNI plugin"), and drop any that would be
-near-duplicates or mere recognition.
+Bad cards (never emit):
+- `List the resources a network namespace isolates` → enumeration. Use a cloze set.
+- `What isolates a process's network view?` → `network namespace`: the prompt gives the answer away.
+- A card about a fact Claude mentioned once in a tangent the user never engaged with.
 
-**Enumeration (banned):** never emit
-`Basic,List the three resources a network namespace isolates,...` — a list
-prompt. If the individual resources each matter, test them one at a time;
-otherwise keep the single conceptual card.
+## Workflow
 
-## Workflow when running this skill
-
-1. Read the source (conversation, slide text, or image) and pull only the taught
-   concepts.
-2. For each concept, run the decision procedure; write Basic/Cloze rows, queue
-   diagrammatic facts for the worklist, drop anything that can't be made atomic.
-3. Write the CSV file with the exact header and columns above — one deck via
-   `#deck:`, topics carried by tags.
-4. If (and only if) any diagrammatic facts were queued, write the occlusion
-   worklist.
-5. Deliver the CSV (and worklist if present). Keep the deck tight; state the
-   card count, the deck name, and the tags used so the user can import with
-   confidence.
+1. Detect the mode (conversation vs. course material).
+2. Conversation mode: build the learning inventory (struggles → new knowledge
+   → insights). Material mode: list the taught concepts.
+3. For each item, pick the card type by the shape of the fact and write the
+   card(s).
+4. **Self-check every card** against the card rules: context present, nothing
+   given away, one retrieval, one-line answer, inside the source. Fix or drop
+   any card that fails. If every card came out the same type, re-check each
+   fact's shape once. Uniformity is fine only if the facts really are uniform.
+5. Write the CSV, then validate it with a quick script: every row parses to
+   exactly 6 fields, every Cloze row has at least one `{{cN::`, guids are
+   unique, and there are no raw `<` or `>` outside HTML.
+6. Write the occlusion worklist, only if one is needed.
+7. Deliver the file(s) with: card count, deck, tags used, and (conversation
+   mode) the 3–6 line list of struggles covered.
