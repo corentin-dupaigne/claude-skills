@@ -3,7 +3,7 @@ name: "anki-flashcards"
 description: "Turn what the user just learned, usually in a conversation with Claude and sometimes from slides or notes, into atomic Anki cards as an importable CSV. Use for flashcard this, make cards from this, add this to Anki, even without the words Anki or flashcard."
 ---
 
-# Anki Flashcards (v3)
+# Anki Flashcards (v4)
 
 Make a small deck of Anki cards the user can review **cold**: tired, on a phone
 in the metro, months later, with the conversation forgotten. He must never need
@@ -12,12 +12,12 @@ why a card exists.
 
 Two failure modes kill a deck. Every rule below exists to prevent one of them:
 
-- **Too hard to understand.** Unexplained notation, compressed answers, prompts
-  that only make sense with the conversation in mind. Each such card costs a
-  lookup and breaks the review flow.
+- **Too hard to understand.** Unexplained notation or vocabulary, compressed
+  answers, prompts that only make sense with the conversation in mind. Each such
+  card costs a lookup and breaks the review flow.
 - **Not worth knowing.** Incidental values from one exercise ("e − 1 ≈ 1,72"),
-  trivia, details that will never come up again. They waste reviews and make
-  the whole deck feel pointless.
+  trivia, things the user will have in front of him anyway. They waste reviews
+  and make the whole deck feel pointless.
 
 Anki handles scheduling. The job here is to write cards that need no fixing and
 test what the user **actually learned**.
@@ -29,16 +29,27 @@ be fixed, it is dropped. A missing card costs nothing; a bad card costs friction
 at every review.
 
 1. **Cold-read.** Understandable alone, months later, without the conversation.
-   Tags aren't shown during review, so the prompt states its context
-   (`Loi normale : …`, `In Kubernetes CNI, …`). Every symbol is either standard
-   or named in words ("la fonction de répartition de Y", not a bare `F_Y`). If
-   the user might think "what does this even mean?", the card fails.
-2. **Reusable.** It tests a rule, concept, method or mechanism that will serve
-   again on a *different* problem of the same kind. Not a value or detail that
-   belongs to one exercise (a specific root, a specific numeric result,
-   "e − 1 ≈ 1,72"). Exception: constants that recur across problems (z = 1,96
-   for 95 %). When the user made an error, card **the general rule behind the
-   error**, not the instance where it happened.
+   - Tags aren't shown during review, so the prompt states its context
+     (`Loi normale : …`, `In Kubernetes CNI, …`).
+   - **Every letter and symbol is named** in the card: `Loi normale N(m, σ), de
+     moyenne m et d'écart-type σ : …`, never a bare `m`, `σ` or `F_Y`. Only
+     skip this when naming it would give the answer away.
+   - **Every word is one the user knows.** Claude often uses jargon in a
+     conversation without defining it ("support", "marginal", "datapath"). A
+     term may appear on a card only if the user's course uses it or the
+     conversation explained it. Otherwise replace it with plain words, or, if
+     the term is worth learning, add one card that defines it.
+   - If the user might think "what does this even mean?", the card fails.
+2. **Worth knowing.** It tests a rule, concept, method or mechanism that will
+   serve again on a *different* problem of the same kind.
+   - Not a value or detail that belongs to one exercise (a specific root, a
+     specific numeric result, "e − 1 ≈ 1,72").
+   - **Not something the user will have available when it matters**: a table,
+     formula sheet or documentation allowed in the exam or at work. Card **how
+     to use** the resource (which value to look up, which column to read), not
+     what is printed in it. Ask the user about exam conditions if unsure.
+   - When the user made an error, card **the general rule behind the error**,
+     not the instance where it happened.
 3. **Gradable in two seconds.** One canonical answer, so the user knows at once
    whether he was right. No vague prompt ("what is the link between X and Y?")
    whose answer could be phrased many ways.
@@ -48,14 +59,21 @@ at every review.
 
 ## Answers, and the "why" line
 
-- **Answer:** one line, about 10 words at most. A term or short phrase is best.
-  No trailing period on bare terms.
-- **Why line (optional):** when the answer could be memorized without being
-  understood, or when the card targets a struggle, add one short reason (about
-  12 words max) under the answer. This line is what makes a card
-  self-explanatory, so the user never has to ask an AI. Never a paragraph,
-  never a second fact. If the reason doesn't fit in one short line, the card is
-  too complex: split it or drop it.
+- **Answer:** one line, about 10 words at most. A term, formula or short
+  phrase. No trailing period on bare terms.
+- **Why line (optional):** one short line (about 12 words max) under the answer
+  that shows **how you get to the answer**: the step, rule or reason that
+  produces it. Add it when the answer could be memorized without being
+  understood, or when the card targets a struggle. It is the user's way to
+  rebuild the answer instead of reciting it, so he never has to ask an AI.
+  - Write it in plain words, with only terms the user knows (gate 1 applies to
+    the why line too). If the why line needs its own explanation, it has
+    failed.
+  - It explains the answer. It is **not** a warning about the user's past
+    mistake ("e^y is the bound, not the probability") and **not** a second
+    fact ("then a = m − zσ").
+  - If the reason doesn't fit in one short line, the card is too complex: split
+    it or drop it.
 
 Format: Basic → in the Back field as `answer<br><small>why</small>`.
 Cloze → in the Back Extra field.
@@ -78,8 +96,12 @@ List the **learning events**, by priority:
 3. **Insights**. Moments where something clicked (a "so that's why…", an
    analogy that worked). These usually become "Why…?" cards.
 
+Also note the **vocabulary** Claude used without defining it. Each such term
+must either be kept off the cards or get a definition card (gate 1).
+
 Leave out:
 - incidental values and one-off results of a specific exercise
+- anything the user will have in front of him when it matters (gate 2)
 - arithmetic slips with no rule behind them (a typo, a miscopied number)
 - the same rule violated several times: card it **once**
 - things Claude mentioned in passing that the user never engaged with
@@ -92,12 +114,16 @@ exercises. Card the rule once; don't try to card every slip.
 
 ### Step 2: turn each event into card(s)
 
-- **Use the conversation's own framing**: its terms, its examples, and the
-  analogy that made it click. A card should feel like *their* conversation, not
-  a textbook. Don't add facts the conversation didn't contain.
+- **Use the conversation's own framing**: its terms (once checked against gate
+  1), its examples, and the analogy that made it click. A card should feel like
+  *their* conversation, not a textbook. Don't add facts the conversation didn't
+  contain.
 - **Struggles** get a card aimed at the exact point of confusion, phrased as an
   open question (gate 4). Up to 2 cards from different angles (e.g. the rule and
   the why). Never phrase the wrong idea as if it were true.
+- **A result that comes from a derivation** (a formula obtained by a step the
+  user had to work out) gets that step in its why line, so the answer never
+  appears out of nowhere.
 - **Methods with steps** (a procedure the user forgot or mixed up) become one
   ordered cloze sequence (see below).
 - **New knowledge**: one card per atomic fact.
@@ -155,6 +181,27 @@ formula.
   neighbours give the position. This replaces "list the steps" cards.
 - At most 5 deletions per note. Split longer procedures into stages.
 
+### Math and formulas
+
+A formula written as plain text is hard to read on a phone ("∫ f(x) dx de −∞
+jusqu'à t", "(x − m)/σ"), which breaks gate 1. Anki renders MathJax natively on
+desktop and mobile, so use it **everywhere a formula appears: prompt, answer,
+why line and cloze text**.
+
+- Any formula with structure goes in inline MathJax `\( … \)`: integral or
+  sum bounds, **every fraction** (`\frac{x-m}{\sigma}`, never `(x − m)/σ`),
+  subscripts (`F_Y`), exponents that are expressions (`e^y`, never a raw `e^y`
+  in text), Greek letters inside a formula.
+- Use `\displaystyle` for integrals, sums and fractions in prompts and answers,
+  so bounds sit above and below the sign and fractions are full size:
+  `\(\displaystyle\int_{-\infty}^{t} f(x)\,dx\)`.
+- Never write bounds, fractions or subscripts in words.
+- Plain Unicode is fine only for trivial expressions (x², a ≥ 0, σ = 0,04).
+- Inside MathJax, write `\lt` and `\gt` instead of `<` and `>`.
+- In a cloze, `}}` inside LaTeX closes the deletion early: add a space (`} }`).
+  Keep deletions inside a formula short, e.g.
+  `\((a-b)^2 = a^2 - {{c1::2ab}} + b^2\)`.
+
 ### Image Occlusion
 
 Only when the source includes a usable figure whose layout is the point. Write a
@@ -176,14 +223,19 @@ one line suggesting a diagram, nothing more. Otherwise don't mention occlusion.
 
 ## Examples
 
-Bad → fixed (from a probability course):
+Bad → fixed. All of these come from real review feedback on a probability
+deck:
 
 | Bad card | Problem | Fix |
 |---|---|---|
 | `Valeur approchée de e − 1 ?` → `≈ 1,72` | Incidental value (gate 2) | Drop |
-| `Densité : f(x) > 0 ou f(x) ≥ 0 ?` | Guessable 50/50 (gate 4) | `Densité : quelle condition de signe doit vérifier f(x) ?` → `f(x) ≥ 0` + why `elle vaut 0 hors du support` |
-| `Quel lien entre « l'aire totale vaut 1 » et F ?` | Vague, many phrasings (gate 3) | `Fonction de répartition : que vaut F(t) après la fin du support ?` → `1` + why `toute l'aire est déjà accumulée` |
-| `Que vaut F_Y(y) ?` → `F_X(e^y)` | Bare notation, no context (gate 1) | `Loi de Y = ln(X) : comment s'écrit la fonction de répartition de Y avec celle de X ?` → `F_X(e^y)` + why `e^y est la borne, pas la probabilité` |
+| `Intervalle centré : pour 90 %, z = {{c1::1,645}}` | Read from the table allowed in the exam (gate 2) | Drop; keep the card on *which value to look up* (0,95) |
+| `Densité : f(x) > 0 ou f(x) ≥ 0 ?` | Guessable 50/50 (gate 4) | `Densité : quelle condition de signe doit vérifier f(x) ?` → `f(x) ≥ 0` |
+| why `elle vaut 0 hors du support, donc pas > 0` | Undefined jargon and compressed logic in the why line | why `f peut valoir 0, là où X ne prend aucune valeur` |
+| `Loi normale : que mesure z = (x − m)/σ ?` | m and σ not named (gate 1); fraction written with "/" | `Loi normale N(m, σ), de moyenne m et d'écart-type σ : que mesure \(z = \dfrac{x-m}{\sigma}\) ?` |
+| `Quel lien entre « l'aire totale vaut 1 » et F ?` | Vague, many phrasings (gate 3) | `Fonction de répartition : que vaut F(t) après la dernière valeur que X peut prendre ?` → `1` |
+| `Loi de Y = ln(X) : fonction de répartition de Y ?` → `F_X(e^y)`, why `e^y est la borne, pas la probabilité` | Answer appears from nowhere; why line warns about a past mistake instead of showing the step | why `\(\ln X \le y \iff X \le e^y\), car exp est croissante` |
+| `… F(t) ?` → `∫ f(x) dx de −∞ jusqu'à t` | Bounds in words, hard to read | `\(\displaystyle\int_{-\infty}^{t} f(x)\,dx\)` |
 
 Also never emit:
 - `List the resources a network namespace isolates` → enumeration. Use a cloze set.
@@ -193,7 +245,7 @@ Also never emit:
 Good cloze sequence (a method the user forgot):
 
 ```
-Cloze,"Loi de Y = g(X) : on part de {{c1::F_Y(y) = P(Y ≤ y)}}, on remplace Y par g(X), on {{c2::isole X dans l'inégalité}}, puis on {{c3::reconnaît F_X}}."
+Cloze,"Loi de Y = g(X) : on part de {{c1::P(Y ≤ y)}}, on remplace Y par g(X), on {{c2::isole X dans l'inégalité}}, puis on {{c3::reconnaît la fonction de répartition de X}}."
 ```
 
 Conversation excerpt: *the user thought a pod's IP was assigned by the kubelet;
@@ -209,7 +261,7 @@ described below.)
 #notetype column:2
 #deck:Flashcards
 #tags column:6
-a1f3c9e2b0,Basic,"In Kubernetes, which component assigns a pod's IP?",The CNI plugin<br><small>during the ADD operation, not the kubelet</small>,,k8s::cni
+a1f3c9e2b0,Basic,"In Kubernetes, which component assigns a pod's IP?",The CNI plugin<br><small>it runs during the ADD operation when the pod is created</small>,,k8s::cni
 7c2e91d4aa,Basic,"In Kubernetes, why can containers in the same pod talk over localhost?",They share one network namespace,,k8s::networking
 9d03aa61e5,Cloze,"Pod network setup order: kubelet → {{c1::container runtime}} → {{c2::CNI plugin}} → {{c3::IPAM plugin}}",,,k8s::cni
 e6a7b8c901,Basic (optional reversed card),IPAM (networking),IP Address Management,y,net::ipam
@@ -241,11 +293,14 @@ UTF-8 `.csv`. Header lines first:
 
 - **guid:** first 10 hex chars of sha1(first tag + "|" + field 3 as first
   written), so re-importing a fixed file updates cards instead of duplicating
-  them. Keep a card's guid unchanged when revising its wording in the same
-  session.
+  them. When a card is revised later (same session or a later fix), keep its
+  original guid so the user's review history is kept.
+- Re-importing never deletes cards. When a fix **drops** a card, tell the user
+  which one to delete by hand in Anki.
 - Quote any field containing a comma, double-quote or newline; double internal
   quotes. Escape literal `<` `>` in text as `&lt;` `&gt;` (the `<br>` and
-  `<small>` tags are the only raw HTML allowed). No embedded newlines.
+  `<small>` tags are the only raw HTML allowed; inside MathJax use `\lt` `\gt`).
+  No embedded newlines.
 - Cloze syntax: `{{c1::answer}}`, optionally `{{c1::answer::hint}}`.
 
 Import: **File → Import** in Anki. The three note types are built in.
@@ -266,16 +321,33 @@ Only mask labels that test a taught concept.
 
 1. Detect the mode (conversation vs. course material).
 2. Build the inventory (conversation mode: struggles with their general rule →
-   new knowledge → insights) or list the taught concepts.
-3. Write the card(s) for each item, picking the type by the fact's shape.
+   new knowledge → insights, plus undefined vocabulary) or list the taught
+   concepts.
+3. Write the card(s) for each item, picking the type by the fact's shape. Put
+   every formula in MathJax.
 4. **Cold-review pass.** Reread every card as the user will meet it: tired, on a
-   phone, conversation forgotten. Run the four gates on each. Rewrite or drop
-   every failure. Add a why line wherever the bare answer would not be
-   understood. If every card came out the same type, re-check each fact's shape
-   once. Then apply the 20-card cap.
+   phone, conversation forgotten. For each card, check:
+   - Is every letter, symbol and word in the prompt, answer and why line known
+     to the user without the conversation?
+   - Would the user have this in front of him when it matters (table, sheet,
+     docs)? Then drop it.
+   - Does the why line show how to get the answer, in plain words, with no
+     second fact?
+   - Is every formula, fraction and exponent in MathJax?
+   - Do the four gates pass?
+   Rewrite or drop every failure. If every card came out the same type,
+   re-check each fact's shape once. Then apply the 20-card cap.
 5. Write the CSV and validate it with a quick script: 6 fields per row, every
    Cloze row has `{{cN::`, guids unique, no raw `<` `>` other than `<br>` and
-   `<small>`.
+   `<small>`, every `\(` has a matching `\)`, no `}}` inside MathJax in a
+   cloze, and no `/` used as a fraction outside MathJax.
 6. Write the occlusion worklist, only if needed.
 7. Deliver with: card count, deck, tags used, and (conversation mode) 3–6 short
    lines listing which struggles were carded.
+
+## Improving this skill
+
+The best signal is the user's own review: cards he didn't understand, couldn't
+grade, found useless, or failed repeatedly (leeches). When he reports them, group
+the problems by type, fix the rule that let them through, add the bad → fixed
+pair to the examples above, and fix the cards while keeping their guids.
